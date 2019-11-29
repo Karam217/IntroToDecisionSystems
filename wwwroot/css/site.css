@@ -133,3 +133,7 @@ app {
         display: block;
     }
 }
+
+canvas{
+    border: 1px dashed black;
+}

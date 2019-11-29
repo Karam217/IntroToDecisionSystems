@@ -5,3 +5,141 @@
 
 <p>Come and claim me sweet death.</p>
 
+@if (specs == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <form>
+        <label>
+            TSP specification:
+            <select class="form-control" @onchange="TSPSpecSelected">
+                @foreach(var spec in specs)
+                {
+                    <option>@spec.Name</option>
+                }
+            </select>
+        </label>
+    </form>
+
+    <BECanvas @ref="scene" Width="500" Height="500"></BECanvas>
+
+}
+
+@code {
+
+
+    public class SerializableTSPspec
+    {
+        public string Name { get; set; }
+
+        public int[] OptimalTour { get; set; }
+
+        public SerializableLocation[] Cities { get; set; }
+
+        public static TSPSpec ToDomain(SerializableTSPspec spec)
+        {
+            return new TSPSpec(
+                spec.Name,
+                spec.OptimalTour,
+                spec.Cities.Select(SerializableLocation.ToDomain).ToList());
+        }
+
+        public override string ToString()
+        {
+            var coordinates = string.Join(", ", (IEnumerable<SerializableLocation>)Cities);
+            return $"{Name} ({Cities.Length} cities): ({coordinates})";
+        }
+    }
+
+    public class SerializableLocation
+    {
+        public double X { get; set; }
+
+        public double Y { get; set; }
+
+        public override string ToString()
+        {
+            return $"{X}, {Y}";
+        }
+
+        public static Location ToDomain(SerializableLocation location)
+        {
+            return new Location(location.X, location.Y);
+        }
+    }
+
+    TSPSpec[] specs;
+    TSPSpec selectedTSPSpec;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var serverspecs = await Http.GetJsonAsync<SerializableTSPspec[]>("sample-data/tspspecs.json");
+        Console.WriteLine($"{string.Join(Environment.NewLine, (IEnumerable<SerializableTSPspec>)serverspecs)}");
+        specs = serverspecs
+            .Select(SerializableTSPspec.ToDomain)
+            .OrderBy(spec => spec.Cities.Count)
+            .ToArray();
+        selectedTSPSpec = specs.FirstOrDefault();
+    }
+
+    private void TSPSpecSelected(ChangeEventArgs e)
+    {
+        var specName = (string)e.Value;
+        Console.WriteLine($"Selected Spec: {specName}");
+        selectedTSPSpec = specs.Single(spec => spec.Name == specName);
+    }
+
+    BECanvasComponent scene;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if(scene == null)
+        {
+            return;
+        }
+
+        var context = await scene.CreateCanvas2DAsync();
+        await context.ClearRectAsync(0, 0, scene.Width, scene.Height);
+
+        if(selectedTSPSpec == null)
+        {
+            return;
+        }
+
+        var minX = selectedTSPSpec.Cities
+            .Select(location => location.X)
+            .Min();
+
+        var minY = selectedTSPSpec.Cities
+            .Select(location => location.Y)
+            .Min();
+
+        var maxX = selectedTSPSpec.Cities
+            .Select(location => location.X)
+            .Max();
+
+        var maxY = selectedTSPSpec.Cities
+            .Select(location => location.Y)
+            .Max();
+
+        Location GetSceneCoordinates(Location city)
+        {
+            int padding = 10;
+            var xRatio = (scene.Width - 2* padding) / (maxX - minX);
+            var yRatio = (scene.Height - 2* padding) / (maxY - minY);
+            var x = (city.X - minX) * xRatio + padding;
+            var y = (city.Y - minY) * yRatio + padding;
+            return new Location(x, y);
+        }
+
+        foreach(var city in selectedTSPSpec.Cities.Select(GetSceneCoordinates))
+        {
+            await context.BeginPathAsync();
+            await context.ArcAsync(city.X, city.Y, 2, 0, 2 * Math.PI);
+            await context.FillAsync();
+        }
+    }
+
+}
